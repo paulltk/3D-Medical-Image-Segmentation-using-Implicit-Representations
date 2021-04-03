@@ -1,2 +1,4 @@
 .ipynb_checkpoints/*
 Models/*
+cats/*
+cats_and_dogs/*
