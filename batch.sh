@@ -1,10 +1,9 @@
 #!/bin/bash
 
-#SBATCH --time=00:15:00
+#SBATCH --time=04:00:00
 #SBATCH --gres=gpu:1
+#SBATCH -w, --nodelist=rng-flux-01
 
 cd /home/ptenkaate/scratch/Master-Thesis
 
-echo $$
-
-python3 test_file.py
+python3 pi_gan.py --epochs=100 --cnn_setup=21

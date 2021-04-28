@@ -2,3 +2,5 @@
 Models/*
 cats/*
 cats_and_dogs/*
+Dataset/*
+saved_runs/*

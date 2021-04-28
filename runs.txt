@@ -1,0 +1,56 @@
+python3 pi_gan.py --name="standard setup"
+
+python3 pi_gan.py --name="batchnorm" --batchnorm=True
+
+python3 pi_gan.py --name="conv dropout 0.25" --conv_dropout=0.25
+
+python3 pi_gan.py --name="conv dropout 0.5" --conv_dropout=0.5
+
+python3 pi_gan.py --name="linear dropout 0.25" --linear_dropout=0.25
+
+python3 pi_gan.py --name="linear dropout 0.5" --linear_dropout=0.5
+
+python3 pi_gan.py --name="linear and conv dropout 0.25" --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="cnn weight decay 1e-4" --cnn_wd=0.0001
+
+python3 pi_gan.py --name="siren weight decay 1e-4" --siren_wd=0.0001
+
+python3 pi_gan.py --name="both weight decay 1e-4" --cnn_wd=0.0001 --siren_wd=0.0001
+
+python3 pi_gan.py --name="siren_hidden_layers 4" --siren_hidden_layers=4
+
+python3 pi_gan.py --name="batchnorm linear and conv dropout" --batchnorm=True --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="cnn wd and linear and conv dropout" --cnn_wd=0.0001 --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="siren wd and linear and conv dropout" --siren_wd=0.0001 --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="both wd and linear and conv dropout" --cnn_wd=0.0001 --siren_wd=0.0001 --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="batchnorm both wd and linear and conv dropout" --batchnorm=True --cnn_wd=0.0001 --siren_wd=0.0001 --conv_dropout=0.25 --linear_dropout=0.25
+
+python3 pi_gan.py --name="first_omega_0 1" --first_omega_0=1.
+
+python3 pi_gan.py --name="first_omega_0 5" --first_omega_0=5.
+
+python3 pi_gan.py --name="first_omega_0 10" --first_omega_0=10.
+
+python3 pi_gan.py --name="first_omega_0 100" --first_omega_0=100.
+
+python3 pi_gan.py --name="hidden_omega_0 1" --hidden_omega_0=1.
+
+python3 pi_gan.py --name="hidden_omega_0 5" --hidden_omega_0=5.
+
+python3 pi_gan.py --name="hidden_omega_0 10" --hidden_omega_0=10.
+
+python3 pi_gan.py --name="hidden_omega_0 100" --hidden_omega_0=100.
+
+
+
+
+
+
+
+
+

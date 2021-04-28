@@ -1,5 +1,18 @@
-import torch 
+import time
+from datetime import datetime
 
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# ==== ======= This is the insert part
+import matplotlib 
+matplotlib.use('Agg')
+ # ==== ======= This is the insert part
+import matplotlib.pyplot as plt
 
-print(DEVICE)
+now = datetime.now()
+dt = now.strftime("%d-%m-%Y %H:%M:%S")
+print(dt)
+
+time.sleep(5)
+
+now = datetime.now()
+dt = now.strftime("%d-%m-%Y %H:%M:%S")
+print(dt)
