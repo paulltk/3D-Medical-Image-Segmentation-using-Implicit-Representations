@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[107]:
 
 
 import os
@@ -26,16 +26,18 @@ from torch.utils.data import Dataset, DataLoader
 import random
 
 
-# In[125]:
+# In[132]:
 
 
 class SirenDataset(Dataset): 
-    def __init__(self, root, subjects, DEVICE, dataset="train", max_t=(8, 8, 4)): 
+    def __init__(self, root, subjects, DEVICE, dataset="train", translate=False, flip=False, max_t=(8, 8, 4)): 
         self.root = root
         self.dataset = dataset
+        self.translate = translate
+        self.flip = flip
         self.max_t = max_t
         self.DEVICE = DEVICE
-        
+                
         if self.dataset == "train":
             self.all_images = [image.split("__")[:3] for image in os.listdir(root) 
                                if list(image.split("__")[:2]) in subjects.tolist() 
@@ -62,13 +64,20 @@ class SirenDataset(Dataset):
         subj, proj, rot = self.all_images[idx]
         pcmra = self.pcmras[idx]
         mask = self.masks[idx]
-            
+        
         if self.dataset == "train":
-            shifts = self.get_random_shift()
+            if self.translate:
+                shifts = self.get_random_shift()
+
+                pcmra = self.translate_image(pcmra, shifts)
+                mask = self.translate_image(mask, shifts)
             
-            pcmra = self.translate_image(pcmra, shifts)
-            mask = self.translate_image(mask, shifts)
+            if self.flip: 
+                random_flips = random.sample([0, 1, 2], random.randint(0,3))
                 
+                for flip in random_flips:
+                    pcmra = pcmra.flip(random_flips)
+                    mask = mask.flip(random_flips)
 
         length = self.prod(pcmra.shape)
 
@@ -82,12 +91,9 @@ class SirenDataset(Dataset):
     
     
     def get_random_shift(self):
-        
-        max_t = self.max_t
-        
-        shifts = (random.randint(-max_t[0], max_t[0]), 
-                  random.randint(-max_t[1], max_t[1]), 
-                  random.randint(-max_t[2], max_t[2]))
+        shifts = (random.randint(-self.max_t[0], self.max_t[0]), 
+                  random.randint(-self.max_t[1], self.max_t[1]), 
+                  random.randint(-self.max_t[2], self.max_t[2]))
         
         return shifts
     
