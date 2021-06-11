@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-
 # coding: utf-8
+
 
 import warnings
 
@@ -33,6 +33,11 @@ from py_files.pigan_model import *
 from py_files.seq_pi_gan_functions import *
 
 
+# #### Train the model
+
+# In[3]:
+
+
 def train():  
     
     warnings.filterwarnings("ignore")
@@ -46,7 +51,9 @@ def train():
         
     ##### data preparation #####
     train_dl, val_dl, test_dl = initialize_dataloaders(ARGS)
-    print(next(iter(test_dl))[1])
+    print("train batch:", next(iter(train_dl))[1][:5])
+    print("eval batch:", next(iter(val_dl))[1][:5])
+    print("test batch:", next(iter(test_dl))[1][:5])
             
     ##### initialize models and optimizers #####
     models, optims, schedulers = load_models_and_optims(ARGS)
@@ -87,9 +94,9 @@ def train():
 
             print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
             
-            t_pcmra_mean, t_pcmra_std, _, _ =                 val_model(train_dl, models, criterions[1], ARGS, output="pcmra", n_eval=100)
+            t_pcmra_mean, t_pcmra_std, _, _ =                 val_model(train_dl, models, criterions[1], ARGS, output="pcmra")
             
-            v_pcmra_mean, v_pcmra_std, _, _ =                 val_model(val_dl, models, criterions[1], ARGS, output="pcmra", n_eval=100)
+            v_pcmra_mean, v_pcmra_std, _, _ =                 val_model(val_dl, models, criterions[1], ARGS, output="pcmra")
 
             pcmra_losses = np.append(pcmra_losses, [[ep ,t_pcmra_mean, t_pcmra_std, 
                                          v_pcmra_mean, v_pcmra_std]], axis=0)
@@ -112,9 +119,9 @@ def train():
 
             print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
             
-            t_mask_mean, t_mask_std, t_dice_mean, t_dice_std =                 val_model(train_dl, models, criterions[0], ARGS, output="mask", n_eval=100)
+            t_mask_mean, t_mask_std, t_dice_mean, t_dice_std =                 val_model(train_dl, models, criterions[0], ARGS, output="mask")
             
-            v_mask_mean, v_mask_std, v_dice_mean, v_dice_std =                 val_model(val_dl, models, criterions[0], ARGS, output="mask", n_eval=100)
+            v_mask_mean, v_mask_std, v_dice_mean, v_dice_std =                 val_model(val_dl, models, criterions[0], ARGS, output="mask")
 
             mask_losses = np.append(mask_losses, [[ep ,t_mask_mean, t_mask_std, 
                                          v_mask_mean, v_mask_std]], axis=0)
@@ -129,18 +136,32 @@ def train():
                       save_models=False)
 
 
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 if __name__ == "__main__":
+
     PARSER = argparse.ArgumentParser()
 
+    
     # Arguments for training
     PARSER.add_argument('--device', type=str, default="GPU", 
                         help='Device that should be used.')
 
-    PARSER.add_argument('--print_models', type=bool, default=False, 
+    PARSER.add_argument('--print_models', type=str2bool, nargs="?", const=True, default=False, 
                         help='Print the models after initialization or not.')
 
     PARSER.add_argument('--name', type=str, default="", 
                         help='Name of the folder where the output should be saved.')
+    
     
 
     # pretrained params 
@@ -163,36 +184,43 @@ if __name__ == "__main__":
     
     
     # data
-    PARSER.add_argument('--dataset', type=str, default="small", 
+    PARSER.add_argument('--dataset', type=str, default="new", 
                         help='The dataset which we train on.')
     
-    PARSER.add_argument('--rotate', type=bool, default=True, 
+    PARSER.add_argument('--seed', type=int, default=34, 
+                        help='Seed for initializig dataloader')
+    
+    PARSER.add_argument('--rotate', type=str2bool, nargs="?", const=True, default=True, 
                         help='Rotations of the same image')
     
-    PARSER.add_argument('--translate', type=bool, default=True, 
+    PARSER.add_argument('--translate', type=str2bool, nargs="?", const=True, default=True, 
                         help='Translations of the same image')
     
-    PARSER.add_argument('--flip', type=bool, default=True, 
+    PARSER.add_argument('--translate_max_pixels', type=int, default=20, 
+                        help='Translation max in height and width.')
+    
+    PARSER.add_argument('--flip', type=str2bool, nargs="?", const=True, default=True, 
                         help='Flips the train image')
     
-    PARSER.add_argument('--crop', type=bool, default=True, 
+    PARSER.add_argument('--crop', type=str2bool, nargs="?", const=True, default=True, 
                         help='Crops the train image')
 
-    PARSER.add_argument('--stretch', type=bool, default=True, 
+    PARSER.add_argument('--stretch', type=str2bool, nargs="?", const=True, default=True, 
                         help='Stretches the train image')
+
+    PARSER.add_argument('--stretch_factor', type=float, default=1.2, 
+                        help='Stretch maximum of the train image')
 
     PARSER.add_argument('--norm_min_max', type=list, default=[0, 1], 
                         help='List with min and max for normalizing input.')
     
-    PARSER.add_argument('--seed', type=int, default=34, 
-                        help='Seed for initializig dataloader')
     
     
     # train variables
     PARSER.add_argument('--pcmra_epochs', type=int, default=5000, 
                         help='Number of epochs for pcmra training.')
 
-    PARSER.add_argument('--mask_epochs', type=int, default=2500, 
+    PARSER.add_argument('--mask_epochs', type=int, default=5000, 
                         help='Number of epochs for mask training.')
     
     PARSER.add_argument('--batch_size', type=int, default=24, 
@@ -201,29 +229,34 @@ if __name__ == "__main__":
     PARSER.add_argument('--eval_every', type=int, default=50, 
                         help='Set the # epochs after which evaluation should be done.')
     
-    PARSER.add_argument('--shuffle', type=bool, default=True, 
+    PARSER.add_argument('--shuffle', type=str2bool, nargs="?", const=True, default=True, 
                         help='Shuffle the train dataloader?')
     
     PARSER.add_argument('--n_coords_sample', type=int, default=5000, 
                         help='Number of coordinates that should be sampled for each subject.')
     
+    PARSER.add_argument('--min_lr', type=float, default=1e-5, 
+                        help='Minimum lr, input for lr scheduler.')
+    
+    
     
     # CNN
-    PARSER.add_argument('--cnn_setup', type=int, default=1, 
+    PARSER.add_argument('--cnn_setup', type=int, default=-1, 
                         help='Setup of the CNN.')
     
-    PARSER.add_argument('--pcmra_train_cnn', type=bool, default=True, 
+    PARSER.add_argument('--pcmra_train_cnn', type=str2bool, nargs="?", const=True, default=True, 
                         help='Whether to also train the cnn during pcmra reconstruction.')
 
-    PARSER.add_argument('--mask_train_cnn', type=bool, default=False, 
+    PARSER.add_argument('--mask_train_cnn', type=str2bool, nargs="?", const=True, default=True, 
                         help='Whether to also train the cnn during mask segmentation.')
 
 
     
     # Mapping
-    PARSER.add_argument('--mapping_setup', type=int, default=2, 
+    PARSER.add_argument('--mapping_setup', type=int, default=-1, 
                         help='Setup of the Mapping network.')
 
+    
     
     # SIREN
     PARSER.add_argument('--dim_hidden', type=int, default=256, 
@@ -245,6 +278,7 @@ if __name__ == "__main__":
     
     PARSER.add_argument('--pcmra_hidden_omega_0', type=float, default=30., 
                         help='Omega_0 of hidden layer of PCMRA siren.')
+    
     
     
     # optimizers
@@ -275,11 +309,11 @@ if __name__ == "__main__":
     PARSER.add_argument('--pcmra_siren_wd', type=float, default=0, 
                         help='Weight decay of PCMRA siren optim.')
     
-    PARSER.add_argument('--patience', type=int, default=100, 
+    PARSER.add_argument('--patience', type=int, default=200, 
                         help='Patience of the LR scheduler.')
-    
     
     
     ARGS = PARSER.parse_args()
     
     train()
+

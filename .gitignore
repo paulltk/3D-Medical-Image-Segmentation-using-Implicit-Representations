@@ -1,6 +1,7 @@
 .ipynb_checkpoints/*
-Models/*
-cats/*
-cats_and_dogs/*
-Dataset/*
+pi-gan/saved_runs/*
+pi-gan_sequential/saved_runs/*
+encoder_decoder/saved_runs/*
 saved_runs/*
+Dataset/original_normalized/*
+Dataset/scaled_normalized/*

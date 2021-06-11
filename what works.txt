@@ -1,0 +1,68 @@
+﻿5; Standard setup work with both mappings, 
+pcmra 0.00161 mask 0.26
+
+6; Layer norm each 2nd layer works better (with last layer), 
+pcmra 0.00151 mask 0.26
+
+7; No layer norm last layer increases segmentation 
+pcmra 0.00158 mask 0.255
+
+8, 9; smaller kernel size is not positive 
+
+10; stride instead of max pool is not increasing mask but still allright pcmra
+pcmra 0.00154 mask 0.273
+
+13; No ReLU in the end does not really matter, keep relu. 
+
+11; Last layer to 512, 1, 1, 1 with layer norm  not a good idea 
+12; same 
+
+14; only three layer norms, last layer no norm, works best 
+
+15; no layer norm at all, does not get sufficient results 
+
+
+UPDATE SO FAR: For now, cnn 14 or 6 and mapping 7 work best 
+
+16; triple conv, does not increase results 
+
+full dataset DOES ALSO work, -2 is best results
+
+CNN weight decay does not increase results at all (1e-3, 1e-4, 1e-5). 
+
+PCMRA weight decay does not increase results for any wd value
+
+stretch 1.4 or 1.6 does not increase results
+
+SIREN mask wd of 1e-4 SEEMS TO WORK, 1e-5 1e-3 not
+
+##############################################################
+UPDATE SO FAR: CNN 14 (also called -1), MAPPING 7 (also called -1), STRETCH 1.2 
+##############################################################
+
+##############################################################
+Update per subject
+##############################################################
+
+patience: 
+- please keep patience at > 200
+
+first_omega_0:
+- 5 dice score 0.196
+- 10 WORKS GOOD: 0.18 eval dice, also 0.188
+- 30 also fine, 0.191
+- 100 fine, 0.19 dice 
+- 300 not recommended
+- 1000 0.20 maybe further training?
+
+pcmra_first_omega_0:
+- 5 doesnt work at all 
+
+siren_hidden_layers: 
+- 4: does not increase dice 0.197
+
+encoder: 
+- output 32, 6, 8, 8: 0.190 dice 
+
+dim_hidden:  
+- 512: worse performance 0.194 dice

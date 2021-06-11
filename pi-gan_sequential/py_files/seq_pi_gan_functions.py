@@ -56,24 +56,27 @@ class init_ARGS(object):
         self.pretrained_best_loss = "mask"
         self.pretrained_models = None
         self.pretrained_lr_reset = None
-        self.dataset = "small"
+        self.dataset = "new"
+        self.seed = 34
         self.rotate = True
         self.translate = True
+        self.translate_max_pixels = 20
         self.flip = True
         self.crop = True
         self.stretch = True
+        self.stretch_factor = 1.2
         self.norm_min_max = [0, 1]
-        self.seed = 34
-        self.pcmra_epochs = 1000
-        self.mask_epochs = 1000
+        self.pcmra_epochs = 5000
+        self.mask_epochs = 5000
         self.batch_size = 24
-        self.eval_every = 25
+        self.eval_every = 50
         self.shuffle = True
         self.n_coords_sample = 5000
-        self.cnn_setup = 1
+        self.min_lr = 1e-5
+        self.cnn_setup = -1
         self.pcmra_train_cnn = True
-        self.mask_train_cnn = False
-        self.mapping_setup = 2
+        self.mask_train_cnn = True
+        self.mapping_setup = -1
         self.dim_hidden = 256
         self.siren_hidden_layers = 3
         self.first_omega_0 = 30.
@@ -88,8 +91,7 @@ class init_ARGS(object):
         self.siren_wd = 0
         self.pcmra_siren_lr = 1e-4
         self.pcmra_siren_wd = 0
-        self.patience = 100
-
+        self.patience = 200
 
 
         print("WARNING: ARGS class initialized.")
@@ -145,7 +147,7 @@ def set_device():
 
 def get_folder(ARGS): 
     now = datetime.now()
-    dt = now.strftime("%d-%m-%Y %H:%M:%S")
+    dt = now.strftime("%Y-%m-%d %H:%M:%S")
     path = f"saved_runs/pi-gan {dt} {ARGS.name}"
     
     Path(f"{path}").mkdir(parents=True, exist_ok=True)   
@@ -211,13 +213,15 @@ def initialize_dataloaders(ARGS):
     else: 
         DEVICE = set_device()
     
-    assert(ARGS.dataset in ["full", "small"])
+    assert(ARGS.dataset in ["full", "small", "new"])
     
     root = "/home/ptenkaate/scratch/Master-Thesis/Dataset/"
     if ARGS.dataset == "small":
         root += "scaled_normalized"
-    else: 
+    elif ARGS.dataset == "full":
         root += "original_normalized"
+    else: 
+        root += "new_original"
         
     subjects = [file.split("__")[:2] for file in  sorted(os.listdir(root))]
     subjects = np.array(sorted([list(subj) for subj in list(set(map(tuple, subjects)))]))
@@ -232,17 +236,16 @@ def initialize_dataloaders(ARGS):
 
     train_subjects, val_subjects, test_subjects =  subjects[train_idx], subjects[val_idx], subjects[test_idx]
 
-    train_ds = SirenDataset(root, train_subjects, DEVICE, dataset="train", 
-                            translate=ARGS.translate, flip=ARGS.flip)
+    train_ds = SirenDataset(root, train_subjects, DEVICE)
     train_dl = DataLoader(train_ds, batch_size=ARGS.batch_size, num_workers=0, shuffle=ARGS.shuffle)
-    print("Train subjects:", train_ds.__len__())
-#     print(train_ds.all_images[:10])
     
-    val_ds =  SirenDataset(root, val_subjects, DEVICE, dataset="val")
+    print("Train subjects:", train_ds.__len__())
+    
+    val_ds =  SirenDataset(root, val_subjects, DEVICE)
     val_dl = DataLoader(val_ds, batch_size=ARGS.batch_size, num_workers=0, shuffle=False)
     print("Val subjects:", val_ds.__len__())
     
-    test_ds =  SirenDataset(root, val_subjects, DEVICE, dataset="test")
+    test_ds =  SirenDataset(root, test_subjects, DEVICE)
     test_dl = DataLoader(test_ds, batch_size=ARGS.batch_size, num_workers=0, shuffle=False)
     print("Test subjects:", test_ds.__len__())
 
@@ -256,7 +259,9 @@ def initialize_dataloaders(ARGS):
 
 ##### TRANSLATE FUNCTIONS #####
 
-def get_random_shift(max_t=(4, 8, 8)):
+def get_random_shift(ARGS):
+        max_t = (4, ARGS.translate_max_pixels, ARGS.translate_max_pixels)
+        
         shifts = (random.randint(-max_t[0], max_t[0]), 
                   random.randint(-max_t[1], max_t[1]), 
                   random.randint(-max_t[2], max_t[2]))
@@ -280,7 +285,7 @@ def translate_image(image, shifts):
 
     return image
 
-def translate_batch(batch): 
+def translate_batch(batch, ARGS): 
     idx, subj, proj, pcmras, masks, loss_covers = batch
     
     new_pcmras = new_masks = new_loss_covers = torch.empty((0)).to(pcmras.device)
@@ -288,7 +293,7 @@ def translate_batch(batch):
     for pcmra, mask, loss_cover in zip(pcmras, masks, loss_covers): 
         pcmra, mask, loss_cover = pcmra.squeeze(), mask.squeeze(), loss_cover.squeeze()
         
-        shifts = get_random_shift()
+        shifts = get_random_shift(ARGS)
         pcmra = translate_image(pcmra, shifts).unsqueeze(0).unsqueeze(0)
         mask = translate_image(mask, shifts).unsqueeze(0).unsqueeze(0)
         loss_cover = translate_image(loss_cover, shifts).unsqueeze(0).unsqueeze(0)
@@ -330,7 +335,7 @@ def rotate_batch(batch):
 
 ##### CROP FUNCTIONS #####
 
-def crop_batch(batch, stretch=True):
+def crop_batch(batch, stretch=True, stretch_factor=1.2):
     idx, subj, proj, pcmras, masks, loss_covers = batch
     
     orig_shape = pcmras.shape[2:]
@@ -338,7 +343,7 @@ def crop_batch(batch, stretch=True):
     crop_sample = RandomCrop3D(orig_shape, p=1.)
     
     rand = random.uniform
-    inc = 1.2
+    inc = stretch_factor
     if stretch:
         resize = [rand(1., inc), rand(1., inc), rand(1., inc)]
     else: 
@@ -365,43 +370,18 @@ def transform_batch(batch, ARGS):
     if ARGS.flip: 
         batch = flip_batch(batch)
     if ARGS.translate: 
-        batch = translate_batch(batch)
+        batch = translate_batch(batch, ARGS)
     if ARGS.crop: 
-        batch = crop_batch(batch, ARGS.stretch)
+        batch = crop_batch(batch, ARGS.stretch, ARGS.stretch_factor)
     if ARGS.rotate: 
         batch = rotate_batch(batch)
     
-    return batch
-
-
-# In[ ]:
-
-
-# ARGS = init_ARGS()
-
-# ##### path to wich the model should be saved #####
-# path = get_folder(ARGS)
-
-# ##### save ARGS #####
-# with open(f"{path}/ARGS.txt", "w") as f:
-#     print(vars(ARGS), file=f)
-
-# ##### data preparation #####
-# train_dl, val_dl, test_dl = initialize_dataloaders(ARGS)
-# print(next(iter(test_dl))[1])
-
-
-# In[ ]:
-
-
-# print(vars(ARGS))
-
-# batch = next(iter(train_dl))
-
-
-# batch = transform_batch(batch, ARGS)
-
-# print(len(batch))
+    idx, subj, proj, pcmras, masks, loss_covers = batch
+    
+    masks = torch.round(masks)
+    loss_covers = torch.floor(torch.round(loss_covers*10) / 10)
+    
+    return idx, subj, proj, pcmras, masks, loss_covers
 
 
 # #### Create siren arrays 
@@ -451,7 +431,7 @@ def get_coords(*sidelengths):
 def cnn_model_optim_scheduler(ARGS, DEVICE): 
     model = load_cnn(ARGS).to(DEVICE)
     optim = torch.optim.Adam(lr=ARGS.cnn_lr, params=model.parameters(), weight_decay=ARGS.cnn_wd)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=1e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=ARGS.min_lr)
     
     return model, optim, scheduler
 
@@ -459,7 +439,7 @@ def cnn_model_optim_scheduler(ARGS, DEVICE):
 def mapping_model_optim_scheduler(ARGS, lr, DEVICE):
     model= load_mapping(ARGS).to(DEVICE)
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=1e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=ARGS.min_lr)
 
     return model, optim, scheduler
     
@@ -468,7 +448,7 @@ def siren_model_optim_scheduler(ARGS, first_omega_0, hidden_omega_0, lr, wd, fin
     model = Siren(ARGS, in_features=3, out_features=1,first_omega_0=first_omega_0, 
                             hidden_omega_0=hidden_omega_0, final_activation=final_activation).to(DEVICE)
     optim = torch.optim.Adam(lr=lr, params=model.parameters(), weight_decay=wd)    
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=1e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, verbose=True, min_lr=ARGS.min_lr)
     
     return model, optim, scheduler
 
@@ -589,8 +569,7 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
             
             out = models["siren"](siren_in, gamma, beta)
             
-        #calculate losses
-        loss = criterion(out * loss_cover, labels * loss_cover) 
+        loss = criterion(out * loss_cover, labels * loss_cover)         
         losses.append(loss.item())
         loss.backward()
         
@@ -601,8 +580,7 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
     mean, std = round(np.mean(losses), 6), round(np.std(losses), 6)
 
     for key in model_keys: 
-        if optims[key].param_groups[0]["lr"] > 1e-5:
-            schedulers[key].step(mean)
+        schedulers[key].step(mean)
     
     return mean, std
 
@@ -610,7 +588,7 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
 # In[ ]:
 
 
-def val_model(dataloader, models, criterion, ARGS, output="pcmra", n_eval=100):
+def val_model(dataloader, models, criterion, ARGS, output="pcmra"):
     with torch.no_grad():
         losses = []
         d_losses = []
@@ -627,18 +605,17 @@ def val_model(dataloader, models, criterion, ARGS, output="pcmra", n_eval=100):
             
             out = get_complete_image(models, pcmra, coords, ARGS, output=output)
             
-            loss = criterion(out, labels)  
-            losses.append(loss.item())
+            for s_out, s_labels in zip(out, labels):
             
-            if output=="mask":
-                d_loss = calc_dice_loss(out, labels) 
-            else:
-                d_loss = torch.tensor([0])
+                loss = criterion(s_out, s_labels)  
+                losses.append(loss.item())
+            
+                if output=="mask":
+                    d_loss = calc_dice_loss(s_out, s_labels) 
+                else:
+                    d_loss = torch.tensor([0])
 
-            d_losses.append(d_loss.item())
-                
-            if i > n_eval:
-                break    
+                d_losses.append(d_loss.item())
 
         loss_mean, loss_std = round(np.mean(losses), 6), round(np.std(losses), 6)
         d_loss_mean, d_loss_std = round(np.mean(d_losses), 6), round(np.std(d_losses), 6)
@@ -701,11 +678,20 @@ def load_pretrained_models(folder, best_dataset, best_loss, models, optims, pret
 
 
 def load_cnn(ARGS): 
-    if ARGS.cnn_setup == -2: 
-        cnn = LargeCNN()
-    elif ARGS.cnn_setup == -1: 
+    if ARGS.cnn_setup == -1: 
         cnn = LargeCNN1()
-    
+    elif ARGS.cnn_setup == -2: 
+        cnn = LargeCNN()
+    elif ARGS.cnn_setup == -3: 
+        cnn = LargeCNN3()
+    elif ARGS.cnn_setup == -4: 
+        cnn = LargeCNN4()
+    elif ARGS.cnn_setup == -5: 
+        cnn = LargeCNN5()
+    elif ARGS.cnn_setup == -6: 
+        cnn = LargeCNN6()
+
+        
     elif ARGS.cnn_setup == 0: 
         cnn = Encoder()
     elif ARGS.cnn_setup == 1: 
@@ -717,8 +703,7 @@ def load_cnn(ARGS):
     elif ARGS.cnn_setup == 4: 
         cnn = Encoder_2()
     elif ARGS.cnn_setup == 5: 
-        cnn = CNN3()
-        
+        cnn = CNN3()     
     elif ARGS.cnn_setup == 6: 
         cnn = CNN4()
     elif ARGS.cnn_setup == 7: 
@@ -741,6 +726,10 @@ def load_cnn(ARGS):
         cnn = CNN13()
     elif ARGS.cnn_setup == 16: 
         cnn = CNN14()
+    elif ARGS.cnn_setup == 17: 
+        cnn = CNN15()
+    elif ARGS.cnn_setup == 18: 
+        cnn = CNN16()
     else: 
         raise(Exception("Choose existing CNN setup"))
         
@@ -748,7 +737,15 @@ def load_cnn(ARGS):
 
 def load_mapping(ARGS): 
     
-    if ARGS.mapping_setup == 1: 
+    if ARGS.mapping_setup == -1 or ARGS.mapping_setup == 7: 
+        mapping = LargeMapping1(ARGS)
+    elif ARGS.mapping_setup == -2: 
+        mapping = LargeMapping2(ARGS)
+    elif ARGS.mapping_setup == -5: 
+        mapping = LargeMapping5(ARGS)
+    
+    
+    elif ARGS.mapping_setup == 1: 
         mapping = Mapping1()
     elif ARGS.mapping_setup == 2: 
         mapping = Mapping2()
@@ -762,8 +759,6 @@ def load_mapping(ARGS):
         mapping = Encoder_Mapping_1()
     elif ARGS.mapping_setup == 6: 
         mapping = Encoder_Mapping_2()
-    elif ARGS.mapping_setup == 7: 
-        mapping = Encoder_Mapping_3()
     elif ARGS.mapping_setup == 8: 
         mapping = Encoder_Mapping_4()
     else: 

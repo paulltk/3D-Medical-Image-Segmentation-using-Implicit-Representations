@@ -70,6 +70,9 @@ class Siren(nn.Module):
                  final_activation="sigmoid"):
         super().__init__()
         
+        self.siren_hidden_layers = ARGS.siren_hidden_layers
+        self.dim_hidden = ARGS.dim_hidden
+        
         self.net = nn.ModuleList([])
 
         self.net.append(SineLayer(in_features, ARGS.dim_hidden, 
@@ -97,10 +100,10 @@ class Siren(nn.Module):
             
     def forward(self, x, gamma, beta):
         for i, sine_layer in enumerate(self.net): 
-            if gamma.shape[1:] == torch.Size([256]):
+            if gamma.shape[1:] == torch.Size([self.dim_hidden]):
                 x = sine_layer(x, gamma, beta)
             
-            elif gamma.shape[1:] == torch.Size([4, 256]):    
+            elif gamma.shape[1:] == torch.Size([self.siren_hidden_layers + 1, self.dim_hidden]):    
                 x = sine_layer(x, gamma[:, i, :], beta[:, i, :])
             
             else: 
