@@ -215,13 +215,17 @@ def initialize_dataloaders(ARGS):
     
     assert(ARGS.dataset in ["full", "small", "new"])
     
-    root = "/home/ptenkaate/scratch/Master-Thesis/Dataset/"
+    root = os.path.abspath('..')
+    root = os.path.join(root, "Dataset")
+
     if ARGS.dataset == "small":
-        root += "scaled_normalized"
+        root = os.path.join(root, "scaled_normalized")
+    
     elif ARGS.dataset == "full":
-        root += "original_normalized"
+        root = os.path.join(root, "original_normalized")
+    
     else: 
-        root += "new_original"
+        root = os.path.join(root, "new_original")        
         
     subjects = [file.split("__")[:2] for file in  sorted(os.listdir(root))]
     subjects = np.array(sorted([list(subj) for subj in list(set(map(tuple, subjects)))]))
