@@ -1,6 +1,7 @@
 .ipynb_checkpoints/*
 pi-gan/saved_runs/*
 pi-gan_sequential/saved_runs/*
+pi-gan_sequential/py_files/__pycache__/*
 encoder_decoder/saved_runs/*
 saved_runs/*
 Dataset/original_normalized/*
