@@ -724,7 +724,7 @@ def calc_dice_loss(pred, target):
 # In[ ]:
 
 
-def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output="pcmra"): 
+def train_model(dataloader, models, optims, schedulers, criterion, blur_layer, ARGS, output="pcmra"): 
     losses = [] 
     
     for batch in dataloader:
@@ -848,15 +848,17 @@ def get_complete_image(models, pcmra, coords, ARGS, val_n=10000, output="mask"):
 # In[ ]:
 
 
-def load_pretrained_models(folder, best_dataset, best_loss, models, optims, pretrained_models=None): 
+def load_pretrained_models(folder, best_dataset, best_loss, models, optims, DEVICE, pretrained_models=None): 
     path = f"saved_runs/{folder}/"
 
     for key in models.keys():
         if pretrained_models == None or key in pretrained_models:
             if os.path.exists(f"{path}/{key}_{best_loss}_loss_{best_dataset}.pt"):
                 print(f"Loading params from {key}")
-                models[key].load_state_dict(torch.load(f"{path}/{key}_{best_loss}_loss_{best_dataset}.pt"))
-                optims[key].load_state_dict(torch.load(f"{path}/{key}_optim_{best_loss}_loss_{best_dataset}.pt"))
+                models[key].load_state_dict(torch.load(f"{path}/{key}_{best_loss}_loss_{best_dataset}.pt", 
+                                            map_location=torch.device(DEVICE)))
+                optims[key].load_state_dict(torch.load(f"{path}/{key}_optim_{best_loss}_loss_{best_dataset}.pt", 
+                                            map_location=torch.device(DEVICE)))
 
 
 # #### Load CNN and Mapping setup
