@@ -40,6 +40,9 @@ from py_files.pigan_model import *
 from kornia.augmentation.augmentation3d import *
 from kornia.geometry.transform import *
 
+import numbers
+from collections import defaultdict
+
 
 # #### ARGS class for .ipynb files
 
@@ -242,7 +245,6 @@ def initialize_dataloaders(ARGS):
 
     train_ds = SirenDataset(root, train_subjects, DEVICE)
     train_dl = DataLoader(train_ds, batch_size=ARGS.batch_size, num_workers=0, shuffle=ARGS.shuffle)
-    
     print("Train subjects:", train_ds.__len__())
     
     val_ds =  SirenDataset(root, val_subjects, DEVICE)
@@ -388,25 +390,25 @@ def transform_batch(batch, ARGS):
     return idx, subj, proj, pcmras, masks, loss_covers
 
 
-# #### Create siren arrays 
+# #### Create siren arrays (OLD VERSION)
 
 # In[ ]:
 
 
-def get_siren_batch(batch): 
-    idx, subj, proj, pcmras, masks, loss_covers = batch
+# def get_siren_batch(batch): 
+#     idx, subj, proj, pcmras, masks, loss_covers = batch
 
-    length = prod(pcmras.shape[2:])
+#     length = prod(pcmras.shape[2:])
     
-    coords = get_coords(*pcmras.shape[2:]).to(pcmras.device).unsqueeze(0)
-#     print("c", coords.shape)
-    coords = coords.repeat(pcmras.shape[0], 1, 1)
+#     coords = get_coords(*pcmras.shape[2:]).to(pcmras.device).unsqueeze(0)
+# #     print("c", coords.shape)
+#     coords = coords.repeat(pcmras.shape[0], 1, 1)
     
-    pcmra_array = pcmras.view(pcmras.shape[0], length, 1)
-    mask_array = masks.view(pcmras.shape[0], length, 1)
-    loss_cover_array = loss_covers.view(loss_covers.shape[0], length, 1)
+#     pcmra_array = pcmras.view(pcmras.shape[0], length, 1)
+#     mask_array = masks.view(pcmras.shape[0], length, 1)
+#     loss_cover_array = loss_covers.view(loss_covers.shape[0], length, 1)
     
-    return idx, subj, proj, pcmras, coords, pcmra_array, mask_array, loss_cover_array
+#     return idx, subj, proj, pcmras, coords, pcmra_array, mask_array, loss_cover_array
 
 def prod(val) :  
     res = 1 
@@ -425,6 +427,187 @@ def get_coords(*sidelengths):
     coords = torch.stack(torch.meshgrid(*tensors), dim=-1)
 
     return coords.reshape(-1, len(sidelengths))
+
+
+# Create SIREN arrays
+
+# In[ ]:
+
+
+class GaussianSmoothing(nn.Module):
+    """
+    Apply gaussian smoothing on a
+    1d, 2d or 3d tensor. Filtering is performed seperately for each channel
+    in the input using a depthwise convolution.
+    Arguments:
+        channels (int, sequence): Number of channels of the input tensors. Output will
+            have this number of channels as well.
+        kernel_size (int, sequence): Size of the gaussian kernel.
+        sigma (float, sequence): Standard deviation of the gaussian kernel.
+        dim (int, optional): The number of dimensions of the data.
+            Default value is 2 (spatial).
+    """
+    def __init__(self, channels, kernel_size, sigma, dim=2):
+        super(GaussianSmoothing, self).__init__()
+        if isinstance(kernel_size, numbers.Number):
+            kernel_size = [kernel_size] * dim
+            self.kernel_radius = kernel_size // 2
+        else:
+            self.kernel_radius = kernel_size[0] // 2
+
+        if isinstance(sigma, numbers.Number):
+            sigma = [sigma] * dim
+
+
+        # The gaussian kernel is the product of the
+        # gaussian function of each dimension.
+        kernel = 1
+        meshgrids = torch.meshgrid(
+            [
+                torch.arange(size, dtype=torch.float32)
+                for size in kernel_size
+            ]
+        )
+        for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
+            mean = (size - 1) / 2
+            kernel *= 1 / (std * math.sqrt(2 * math.pi)) *                       torch.exp(-((mgrid - mean) / (2 * std)) ** 2)
+
+        # Make sure sum of values in gaussian kernel equals 1.
+        kernel = kernel / torch.sum(kernel)
+
+        # Reshape to depthwise convolutional weight
+        kernel = kernel.view(1, 1, *kernel.size())
+        kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
+
+        self.register_buffer('weight', kernel)
+        self.groups = channels
+
+        if dim == 1:
+            self.conv = F.conv1d
+        elif dim == 2:
+            self.conv = F.conv2d
+        elif dim == 3:
+            self.conv = F.conv3d
+        else:
+            raise RuntimeError(
+                'Only 1, 2 and 3 dimensions are supported. Received {}.'.format(dim)
+            )
+
+    def forward(self, input):
+        """
+        Apply gaussian filter to input.
+        Arguments:
+            input (torch.Tensor): Input to apply gaussian filter on.
+        Returns:
+            filtered (torch.Tensor): Filtered output.
+        """
+        return self.conv(input, weight=self.weight, groups=self.groups, padding=self.kernel_radius)
+    
+    
+def gradient3d(data, normalize=False, s=2):
+    data_padded = torch.nn.functional.pad(data, (1,1,1,1,1,1,0,0,0,0))
+
+    grad_x = (data_padded[:,:, s:,   1:-1, 1:-1] - data_padded[:,:, 0:-s, 1:-1, 1:-1]) / s
+    grad_y = (data_padded[:,:, 1:-1, s:,   1:-1] - data_padded[:,:, 1:-1, 0:-s, 1:-1]) / s
+    grad_z = (data_padded[:,:, 1:-1, 1:-1, s:  ] - data_padded[:,:, 1:-1, 1:-1 ,0:-s]) / s
+    
+    grad = torch.cat([grad_x,grad_y,grad_z], dim=1)
+    grad_magn = torch.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
+    
+    if normalize:
+        eps=1e-8
+        grad = grad/(grad_magn + eps)
+    
+    return grad, grad_magn
+
+
+# In[ ]:
+
+
+def get_surface_and_norm(batch): 
+    masks_blurred = blur_layer(batch[-2])     
+
+    grad, grad_magn = gradient3d(masks_blurred, normalize=True, s=2)
+
+    surface = (grad_magn >= 0.5*torch.max(grad_magn)).type(torch.float32)
+    norm = grad * surface
+    
+    return surface, norm
+
+def reshape_arrays(*arrays): 
+    return [array.view(array.shape[0], array.shape[1], -1).permute(0, 2, 1) for array in arrays]
+
+
+# In[ ]:
+
+
+def get_siren_batch(batch, ARGS): 
+    
+    n = ARGS.n_coords_sample
+    sdf_split = ARGS.sdf_split
+
+    idx, subj, proj, pcmras, masks, loss_covers = batch
+    subjects = []
+ 
+    # initialize a coords matrix
+    coords = get_coords(*pcmras.shape[2:]).to(pcmras.device)
+
+    # reshape all matrixes 
+    pcmra_array, mask_array, loss_cover_array = reshape_arrays(pcmras, masks, loss_covers)
+    coords_array = coords.unsqueeze(0).repeat(pcmras.shape[0], 1, 1)
+    if ARGS.sdf: 
+        # get the surface and norm of the mask
+        surface_n, random_n = int(n*sdf_split), n - int(n*sdf_split)
+        surfaces, norms = get_surface_and_norm(batch)        
+        surface_array, norm_array = reshape_arrays(surfaces, norms)
+        
+    elif not ARGS.sdf: 
+        surface_array = norm_array = torch.tensor([]).repeat(pcmras.shape[0], 1)
+
+    if n != -1:
+        # select n coords and their corresponding values
+        for pcmra, mask, loss_cover, surface, norm in             zip(pcmra_array, mask_array, loss_cover_array, surface_array, norm_array):
+
+            if ARGS.sdf:
+                # select n * sfd_split points that lie on the surface
+                surface_idx = (surface != 0).nonzero()[:, 0].flatten().cpu().numpy()
+                surface_idx = np.random.choice(surface_idx, surface_n)
+
+                # select n random coords that have a non zero loss_cover
+                random_idx = (loss_cover != 0).nonzero()[:, 0].cpu().numpy()
+                random_idx = np.random.choice(random_idx, random_n)
+
+                idx = np.concatenate((surface_idx, random_idx))
+        
+                subject = [coords[idx, :].unsqueeze(0), pcmra[idx, :].unsqueeze(0), mask[idx, :].unsqueeze(0),
+                        surface[idx, :].unsqueeze(0), norm[idx, :].unsqueeze(0)]
+
+            elif not ARGS.sdf: 
+                # select n random coords that have a non zero loss_cover
+                idx = (loss_cover != 0).nonzero()[:, 0].cpu().numpy()
+                idx = np.random.choice(idx, n)
+                
+                subject = [coords[idx, :].unsqueeze(0), pcmra[idx, :].unsqueeze(0), mask[idx, :].unsqueeze(0),
+                        torch.tensor([]).unsqueeze(0), torch.tensor([]).unsqueeze(0)]
+
+            subjects.append(subject)
+
+        coords_array = torch.cat([subj[0] for subj in subjects], 0)
+        pcmra_array = torch.cat([subj[1] for subj in subjects], 0)
+        mask_array = torch.cat([subj[2] for subj in subjects], 0)
+        surface_array = torch.cat([subj[3] for subj in subjects], 0)
+        norm_array = torch.cat([subj[4] for subj in subjects], 0)
+    
+    return idx, subj, proj, pcmras, coords_array, pcmra_array, mask_array, surface_array, norm_array
+
+
+# In[ ]:
+
+
+# Initialize the blurring layer
+sigma = 1.0
+size = math.ceil(3*sigma)
+blur_layer = GaussianSmoothing(1, [size,size,size], sigma, dim=3).cuda()
 
 
 # #### Initialize models
@@ -541,13 +724,12 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
     for batch in dataloader:
                     
         batch = transform_batch(batch, ARGS)            
-        _, _, _, pcmra, coords, pcmra_array, mask_array, loss_cover_array = get_siren_batch(batch)
+        _, _, _, pcmra, coords_array, pcmra_array, mask_array, surface_array, norm_array = get_siren_batch(batch, ARGS)
         
         latent_rep = models["cnn"](pcmra) # get latent representation
         
         if output == "pcmra": 
-            siren_in, labels, loss_cover = choose_random_coords(coords, pcmra_array, 
-                                                                loss_cover_array, n=ARGS.n_coords_sample)
+            siren_in, labels = coords_array, pcmra_array
             
             if ARGS.pcmra_train_cnn:
                 gamma, beta = models["pcmra_mapping"](latent_rep)
@@ -560,9 +742,8 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
             out = models["pcmra_siren"](siren_in, gamma, beta)            
             
         elif output == "mask": 
-            siren_in, labels, loss_cover = choose_random_coords(coords, mask_array, 
-                                                                loss_cover_array, n=ARGS.n_coords_sample)
-            
+            siren_in, labels = coords_array, mask_array
+
             if ARGS.mask_train_cnn:
                 gamma, beta = models["mapping"](latent_rep)
                 model_keys = ["cnn", "mapping", "siren"]
@@ -573,7 +754,7 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
             
             out = models["siren"](siren_in, gamma, beta)
             
-        loss = criterion(out * loss_cover, labels * loss_cover)         
+        loss = criterion(out, labels)         
         losses.append(loss.item())
         loss.backward()
         
@@ -597,17 +778,13 @@ def val_model(dataloader, models, criterion, ARGS, output="pcmra"):
         losses = []
         d_losses = []
         
-        i = 0
-        
         for batch in dataloader:
                     
-            _, _, _, pcmra, coords, pcmra_array, mask_array, loss_cover_array = get_siren_batch(batch)
-
-            i += pcmra.shape[0]
-            
+            _, _, _, pcmra, coords_array, pcmra_array, mask_array, surface_array, norm_array = get_siren_batch(batch, ARGS)
+    
             labels = [pcmra_array if output=="pcmra" else mask_array][0]
             
-            out = get_complete_image(models, pcmra, coords, ARGS, output=output)
+            out = get_complete_image(models, pcmra, coords_array, ARGS, output=output)
             
             for s_out, s_labels in zip(out, labels):
             
