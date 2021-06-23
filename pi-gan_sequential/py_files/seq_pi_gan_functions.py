@@ -524,6 +524,15 @@ def gradient3d(data, normalize=False, s=2):
 # In[ ]:
 
 
+def initialize_blurring_layer(sigma, DEVICE):
+    # Initialize the blurring layer
+    size = math.ceil(3*sigma)
+    return GaussianSmoothing(1, [size,size,size], sigma, dim=3).to(DEVICE)
+
+
+# In[ ]:
+
+
 def get_surface_and_norm(batch): 
     masks_blurred = blur_layer(batch[-2])     
 
@@ -541,7 +550,7 @@ def reshape_arrays(*arrays):
 # In[ ]:
 
 
-def get_siren_batch(batch, ARGS): 
+def get_siren_batch(batch, blur_layer, ARGS): 
     
     n = ARGS.n_coords_sample
     sdf_split = ARGS.sdf_split
@@ -604,10 +613,7 @@ def get_siren_batch(batch, ARGS):
 # In[ ]:
 
 
-# Initialize the blurring layer
-sigma = 1.0
-size = math.ceil(3*sigma)
-blur_layer = GaussianSmoothing(1, [size,size,size], sigma, dim=3).cuda()
+
 
 
 # #### Initialize models
@@ -724,7 +730,7 @@ def train_model(dataloader, models, optims, schedulers, criterion, ARGS, output=
     for batch in dataloader:
                     
         batch = transform_batch(batch, ARGS)            
-        _, _, _, pcmra, coords_array, pcmra_array, mask_array, surface_array, norm_array = get_siren_batch(batch, ARGS)
+        _, _, _, pcmra, coords_array, pcmra_array, mask_array, surface_array, norm_array = get_siren_batch(batch, blur_layer, ARGS)
         
         latent_rep = models["cnn"](pcmra) # get latent representation
         
