@@ -1,0 +1,45 @@
+import warnings
+import time
+
+from py_files.args import *
+
+from py_files.functions import *
+
+from py_files.dataset import *
+
+from py_files.cnn_models import *
+from py_files.mapping_models import *
+from py_files.pigan_model import *
+
+from py_files.load_utils import *
+from py_files.data_utils import *
+from py_files.plot_utils import *
+from py_files.loss_utils import *
+from py_files.train_utils import *
+from py_files.save_utils import *
+
+training_setups = [
+               ("segmentation", "sdf", "golden", "1net", 30),
+               ("segmentation", "sdf", "golden", "2net", 30),
+               ("segmentation", "sdf", "golden", "4net", 30),
+               ("segmentation", "sdf", "golden", "golden", 30),
+               ]
+
+for i in range(1):
+    for training_setup, segmentation, cnn_setup, mapping_setup, first_omega_0 in training_setups: 
+        ARGS = init_ARGS()
+        
+        ARGS.training_setup = training_setup
+        ARGS.segmentation = segmentation
+
+        ARGS.cnn_setup = mapping_setup
+        ARGS.mapping_setup = mapping_setup
+        ARGS.first_omega_0 = first_omega_0
+        
+        print(f"Starting training {ARGS.name}.")
+
+        print(vars(ARGS))
+            
+        complete_training(ARGS)  
+                
+        torch.cuda.empty_cache()  

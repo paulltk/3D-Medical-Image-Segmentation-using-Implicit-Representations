@@ -9,6 +9,10 @@ class init_ARGS(object):
         self.save_models = True
         self.name = ""
 
+        # training
+        self.training_setup = "segmentation" # reconstruction, segmentation, combined, consecutively
+        self.train_encoder_seg = True
+
         # Pretrained
         self.pretrained = None
         self.pretrained_best_dataset = "train"
@@ -75,7 +79,7 @@ class init_ARGS(object):
 
         # SDF loss lambdas
         self.lambda_sdf = 3e2
-        self.lambda_inter = 5e1
+        self.lambda_inter = 1e2
         self.lambda_normal = 1e1
         self.lambda_grad = 5e0
 
