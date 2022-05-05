@@ -9,9 +9,13 @@ class Show_images(object):
     images_titles: a list with tuples, each tuple an np.array and a 
     title for the array subfigure. 
     """
-    def __init__(self, suptitles, *images_titles):
+    def __init__(self, suptitles, *images_titles, colorbar=True, y_label=True):
         # if string if given, make list with that title for 
         # each slice.
+
+        self.colorbar = colorbar
+        self.y_label = y_label
+
         if type(suptitles) == str: 
             self.suptitles = []
             for i in range(images_titles[0][0].shape[2]): 
@@ -48,7 +52,7 @@ class Show_images(object):
         
         # create title for each subfigure in slice
         for (sub_ax, image, title) in zip(self.ax, self.images, self.titles): 
-            sub_ax.set_title(title)
+            sub_ax.set_title(title, fontsize=15)
 
             sub_ax.set_yticklabels([])
             sub_ax.set_xticklabels([])
@@ -57,7 +61,8 @@ class Show_images(object):
 
             self.plots.append(plot)
 
-            self.fig.colorbar(plot, ax=sub_ax, fraction=0.046, pad=0.04)
+            if self.colorbar: 
+                self.fig.colorbar(plot, ax=sub_ax, fraction=0.046, pad=0.04)
 
         # link figure to mouse scroll movement
         self.plot_show = self.fig.canvas.mpl_connect('scroll_event', self.onscroll)
@@ -85,10 +90,8 @@ class Show_images(object):
         for i, (plot, image) in enumerate(zip(self.plots, self.images)):
             plot.set_data(image[:, :, self.ind])        
 
-
-
-        
-        self.ax[0].set_ylabel('Slice Number: %s' % self.ind)
+        if self.y_label:
+            self.ax[0].set_ylabel('Slice Number: %s' % self.ind)
 
         
         self.plots[0].axes.figure.canvas.draw()

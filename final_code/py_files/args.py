@@ -50,7 +50,7 @@ class init_ARGS(object):
         
         # Model setups 
         self.cnn_setup = "golden"
-        self.mapping_setup = "golden"    
+        self.mapping_setup = "golden"
         
         # SIREN setup 
         self.dim_hidden = 256
@@ -85,6 +85,9 @@ class init_ARGS(object):
 
         # SDF surface/non-surface split
         self.sdf_split = 0.5
+
+        # combined segmentation loss lambda
+        self.seg_loss_lambda = 2e-1
         
         if not silent:
             print("WARNING: ARGS class initialized.")

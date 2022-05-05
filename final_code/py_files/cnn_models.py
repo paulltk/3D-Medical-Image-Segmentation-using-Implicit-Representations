@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
 ####################################################################################
 ############################# CNN Layer Classes ####################################
@@ -114,7 +113,7 @@ class CNN_MaxPool(nn.Module):
             
             ConvLayer(64,  128, kernel_size=5, stride=1, padding=2, activation="relu"),
             ConvLayer(128, 128, kernel_size=5, stride=1, padding=2, activation="relu",
-                max_pool=2,  layer_norm=(6, 8, 8)), 
+                max_pool=2), 
         )
 
     def forward(self, x):

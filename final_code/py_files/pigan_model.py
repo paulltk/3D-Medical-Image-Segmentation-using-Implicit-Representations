@@ -5,7 +5,6 @@ from torch import nn
 import torch.nn.functional as F
 
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
 class SineLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True,

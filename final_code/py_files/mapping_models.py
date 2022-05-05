@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
 
 ####################################################################################
@@ -42,10 +41,15 @@ class Mapping_Golden(nn.Module):
         self.n_gammas = ARGS.siren_hidden_layers + 1
         self.dim_hidden = ARGS.dim_hidden
         
+        if ARGS.cnn_setup == "deep": 
+            first_layer = 1024
+        else: 
+            first_layer = 6144
+
         self.gammas = nn.ModuleList()
         for i in range(self.n_gammas):
             self.gammas.append(nn.Sequential(Flatten(), 
-                                      nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+                                      nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                       nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                       nn.Linear(512, self.dim_hidden), 
                                        )
@@ -54,7 +58,7 @@ class Mapping_Golden(nn.Module):
         self.betas = nn.ModuleList()
         for i in range(self.n_gammas):
             self.betas.append(nn.Sequential(Flatten(), 
-                                      nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+                                      nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                       nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                       nn.Linear(512, self.dim_hidden), 
                                        )
@@ -125,7 +129,12 @@ class Mapping_SingleNetwork(nn.Module):
         
         self.dim_hidden = ARGS.dim_hidden
         
-        self.model = nn.Sequential(Flatten(), nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+        if ARGS.cnn_setup == "deep": 
+            first_layer = 1024
+        else: 
+            first_layer = 6144
+            
+        self.model = nn.Sequential(Flatten(), nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                    nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                    nn.Linear(512, 2 * self.dim_hidden), ReshapeTensor([2, self.dim_hidden]))
         
@@ -146,11 +155,16 @@ class Mapping_SepGammaAndBeta(nn.Module):
         
         self.dim_hidden = ARGS.dim_hidden
 
-        self.gamma_model = nn.Sequential(Flatten(), nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+        if ARGS.cnn_setup == "deep": 
+            first_layer = 1024
+        else: 
+            first_layer = 6144
+
+        self.gamma_model = nn.Sequential(Flatten(), nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                          nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                          nn.Linear(512, self.dim_hidden))
         
-        self.beta_model = nn.Sequential(Flatten(), nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+        self.beta_model = nn.Sequential(Flatten(), nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                         nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                         nn.Linear(512, self.dim_hidden))
         
@@ -173,10 +187,15 @@ class Mapping_SepEachLayer(nn.Module):
         self.n_gammas = ARGS.siren_hidden_layers + 1
         self.dim_hidden = ARGS.dim_hidden
         
+        if ARGS.cnn_setup == "deep": 
+            first_layer = 1024
+        else: 
+            first_layer = 6144
+
         self.models = nn.ModuleList()
         for i in range(self.n_gammas):
             self.models.append(nn.Sequential(Flatten(), 
-                                      nn.Linear(6144, 1024), nn.LeakyReLU(.2),
+                                      nn.Linear(first_layer, 1024), nn.LeakyReLU(.2),
                                       nn.Linear(1024, 512), nn.LeakyReLU(.2),
                                       nn.Linear(512, 2 * self.dim_hidden), ReshapeTensor([2, self.dim_hidden])
                                        )

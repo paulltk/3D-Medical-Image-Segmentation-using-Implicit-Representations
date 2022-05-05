@@ -89,8 +89,8 @@ def cnn_model_optim_scheduler(ARGS, DEVICE):
     return model, optim, scheduler
 
 
-def mapping_model_optim_scheduler(ARGS, lr, DEVICE):
-    model= load_mapping(ARGS).to(DEVICE)
+def mapping_model_optim_scheduler(mapping_setup, ARGS, lr, DEVICE):
+    model= load_mapping(ARGS, mapping_setup).to(DEVICE)
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=ARGS.patience, factor=.5, 
                                                            verbose=True, min_lr=ARGS.min_lr)
@@ -120,15 +120,21 @@ def initialize_models_and_optims(ARGS, DEVICE):
     models["cnn"], optims["cnn"], schedulers["cnn"] = cnn_model_optim_scheduler(ARGS, DEVICE)
     
     models["mapping"], optims["mapping"], schedulers["mapping"] = \
-        mapping_model_optim_scheduler(ARGS, ARGS.mapping_lr, DEVICE)
+        mapping_model_optim_scheduler(ARGS.mapping_setup, ARGS, ARGS.mapping_lr, DEVICE)
     
     models["siren"], optims["siren"], schedulers["siren"] = \
         siren_model_optim_scheduler(ARGS, ARGS.first_omega_0, ARGS.hidden_omega_0, 
                                     ARGS.siren_lr, ARGS.siren_wd, final_activation, DEVICE)
     
-    models["pcmra_mapping"], optims["pcmra_mapping"], schedulers["pcmra_mapping"] = \
-        mapping_model_optim_scheduler(ARGS, ARGS.pcmra_mapping_lr, DEVICE)
-   
+    try: 
+        ARGS.pcmra_mapping_setup
+    except AttributeError:
+        models["pcmra_mapping"], optims["pcmra_mapping"], schedulers["pcmra_mapping"] = \
+            mapping_model_optim_scheduler(ARGS.mapping_setup, ARGS, ARGS.pcmra_mapping_lr, DEVICE)
+    else:
+        models["pcmra_mapping"], optims["pcmra_mapping"], schedulers["pcmra_mapping"] = \
+            mapping_model_optim_scheduler(ARGS.pcmra_mapping_setup, ARGS, ARGS.pcmra_mapping_lr, DEVICE)  
+    
     models["pcmra_siren"], optims["pcmra_siren"], schedulers["pcmra_siren"] = \
         siren_model_optim_scheduler(ARGS, ARGS.pcmra_first_omega_0, ARGS.pcmra_hidden_omega_0,
                                     ARGS.pcmra_siren_lr, ARGS.pcmra_siren_wd, None, DEVICE)
@@ -194,21 +200,21 @@ def load_cnn(ARGS):
     return cnn
 
 
-def load_mapping(ARGS): 
+def load_mapping(ARGS, mapping_setup): 
 
-    if ARGS.mapping_setup == "golden": 
+    if mapping_setup == "golden": 
         mapping = Mapping_Golden(ARGS)
 
-    elif ARGS.mapping_setup == "golden_deep": 
+    elif mapping_setup == "golden_deep": 
         mapping = Mapping_Small(ARGS)
 
-    elif ARGS.mapping_setup == "1net": 
+    elif mapping_setup == "1net": 
         mapping = Mapping_SingleNetwork(ARGS)
 
-    elif ARGS.mapping_setup == "2net": 
+    elif mapping_setup == "2net": 
         mapping = Mapping_SepGammaAndBeta(ARGS) 
 
-    elif ARGS.mapping_setup == "4net": 
+    elif mapping_setup == "4net": 
         mapping = Mapping_SepEachLayer(ARGS)
 
     else: 

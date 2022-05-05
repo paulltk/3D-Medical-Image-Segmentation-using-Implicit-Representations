@@ -32,8 +32,9 @@ def reconstruction(ARGS):
     
     # Log in to your W&B account
     wandb.login()
+
     wandb.init(project=f"{ARGS.training_setup}_{ARGS.segmentation}",
-               name=f"{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
+               name=f"{ARGS.name}_{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
                config=vars(ARGS))
     
     path, DEVICE = initialize_path_and_device(ARGS)   
@@ -76,14 +77,15 @@ def reconstruction(ARGS):
                 "epochs": ep}, step=ep)
 
             # check if training improved last 200 epochs
-            if (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every):
+            if (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every) and \
+            optims["cnn"].param_groups[0]['lr'] == ARGS.min_lr:
                 break
 
     losses = test_epoch(test_dl, models, blur_layer, ARGS, DEVICE)
 
     wandb.log({"test_mse_loss": losses[0], 
         "test_bce_loss": losses[2], 
-        "test_dice_loss": losses[4]}, step=0)
+        "test_dice_loss": losses[4]}, step=ep)
 
 
     wandb.finish()
@@ -93,10 +95,11 @@ def segmentation(ARGS):
     
     again = True
     while again == True: 
+        again = False
         # Log in to your W&B account
         wandb.login()
         wandb.init(project=f"{ARGS.training_setup}_{ARGS.segmentation}",
-               name=f"{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
+               name=f"{ARGS.name}_{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
                config=vars(ARGS))
     
         path, DEVICE = initialize_path_and_device(ARGS)   
@@ -140,94 +143,107 @@ def segmentation(ARGS):
                     "eval_dice_loss": dice_losses[-1, 3], 
                     "epochs": ep}, step=ep)
 
-                if ep == 0 and dice_losses[0, 1] < 1: 
+                if ARGS.pretrained == None and ep == 0 and dice_losses[0, 1] < 1: 
+                    again = True
                     break 
                 
                 # check if training improved last 200 epochs
-                if ARGS.segmentation == "binary" and (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every):
+                if ARGS.segmentation == "binary" and \
+                (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every)  and \
+                optims["cnn"].param_groups[0]['lr'] == ARGS.min_lr:
                     break
-                if ARGS.segmentation == "sdf" and (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every):
+                if ARGS.segmentation == "sdf" and \
+                (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                optims["cnn"].param_groups[0]['lr'] == ARGS.min_lr:
                     break
         
-        again = False
         
         losses = test_epoch(test_dl, models, blur_layer, ARGS, DEVICE)
 
         wandb.log({"test_mse_loss": losses[0], 
             "test_bce_loss": losses[2], 
-            "test_dice_loss": losses[4]}, step=0)
+            "test_dice_loss": losses[4]}, step=ep)
 
         wandb.finish()    
         
 def combined(ARGS): 
     
-    # Log in to your W&B account
-    wandb.login()
-    wandb.init(project=f"{ARGS.training_setup}_{ARGS.segmentation}",
-               name=f"{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
-               config=vars(ARGS))
-    
-    path, DEVICE = initialize_path_and_device(ARGS)   
-    
-    ##### data preparation #####
-    train_dl, val_dl, test_dl = initialize_dataloaders(ARGS, DEVICE)
-            
-    ##### initialize models and optimizers #####
-    models, optims, schedulers = initialize_models_and_optims(ARGS, DEVICE)
-    
-    blur_layer = initialize_blurring_layer(1.0, DEVICE)
-    
-    ##### load pretrained model #####
-    load_from_saved_run(models, optims, DEVICE, ARGS)
-    
-    ##### epoch, train loss mean, train loss std, val loss mean, val loss std #####
-    mask_losses, pcmra_losses, dice_losses = np.empty((0, 5)), np.empty((0, 5)), np.empty((0, 5))
-    
-    for ep in range(ARGS.pcmra_epochs):
-        t = time.time() 
+    again = True
+    while again == True: 
+        again = False
 
-        for model in models.values():
-            model.train()
-
-        loss, _ = train_combined(train_dl, models, optims, schedulers, blur_layer, ARGS)
+        # Log in to your W&B account
+        wandb.login()
+        wandb.init(project=f"{ARGS.training_setup}_{ARGS.segmentation}",
+                   name=f"{ARGS.name}_{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
+                   config=vars(ARGS))
         
-        wandb.log({"epoch_sampling_combined_loss": loss, 
-            "epochs": ep}, step=ep)
+        path, DEVICE = initialize_path_and_device(ARGS)   
+        
+        ##### data preparation #####
+        train_dl, val_dl, test_dl = initialize_dataloaders(ARGS, DEVICE)
+                
+        ##### initialize models and optimizers #####
+        models, optims, schedulers = initialize_models_and_optims(ARGS, DEVICE)
+        
+        blur_layer = initialize_blurring_layer(1.0, DEVICE)
+        
+        ##### load pretrained model #####
+        load_from_saved_run(models, optims, DEVICE, ARGS)
+        
+        ##### epoch, train loss mean, train loss std, val loss mean, val loss std #####
+        mask_losses, pcmra_losses, dice_losses = np.empty((0, 5)), np.empty((0, 5)), np.empty((0, 5))
+        
+        for ep in range(ARGS.pcmra_epochs):
+            t = time.time() 
 
-        if ep % 10 == 0: 
-            print(f"Epoch {ep}, train loss {loss.round(6)}")
+            for model in models.values():
+                model.train()
+
+            loss, _ = train_combined(train_dl, models, optims, schedulers, blur_layer, ARGS)
             
-        if ep % ARGS.eval_every == 0: 
-    
-            print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
-            
-            pcmra_losses, _ = validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, pcmra_losses, None, "pcmra", ARGS)
-            mask_losses, dice_losses =validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, mask_losses, dice_losses, "mask", ARGS)
-            
-            wandb.log({"train_mse_loss": pcmra_losses[-1, 1], 
-                "eval_mse_loss": pcmra_losses[-1, 3],
-                "train_bce_loss": mask_losses[-1, 1], 
-                "eval_bce_loss": mask_losses[-1, 3], 
-                "train_dice_loss": dice_losses[-1, 1], 
-                "eval_dice_loss": dice_losses[-1, 3], 
+            wandb.log({"epoch_sampling_combined_loss": loss, 
                 "epochs": ep}, step=ep)
 
+            if ep % 10 == 0: 
+                print(f"Epoch {ep}, train loss {loss.round(6)}")
+                
+            if ep % ARGS.eval_every == 0: 
+        
+                print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
+                
+                pcmra_losses, _ = validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, pcmra_losses, None, "pcmra", ARGS)
+                mask_losses, dice_losses =validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, mask_losses, dice_losses, "mask", ARGS)
+                
+                wandb.log({"train_mse_loss": pcmra_losses[-1, 1], 
+                    "eval_mse_loss": pcmra_losses[-1, 3],
+                    "train_bce_loss": mask_losses[-1, 1], 
+                    "eval_bce_loss": mask_losses[-1, 3], 
+                    "train_dice_loss": dice_losses[-1, 1], 
+                    "eval_dice_loss": dice_losses[-1, 3], 
+                    "epochs": ep}, step=ep)
 
-            # check if training improved last 200 epochs
-            if ARGS.segmentation == "binary" and (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every) and \
-            (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every):
-                break
-            if ARGS.segmentation == "sdf" and (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every) and \
-            (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every):
-                break
+                if ep == 0 and dice_losses[0, 1] < 1: 
+                    again = True
+                    break 
+                
+                # check if training improved last 200 epochs
+                if ARGS.segmentation == "binary" and (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                optims["cnn"].param_groups[0]['lr'] == ARGS.min_lr:
+                    break
+                if ARGS.segmentation == "sdf" and (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                optims["cnn"].param_groups[0]['lr'] == ARGS.min_lr:
+                    break
 
-    losses = test_epoch(test_dl, models, blur_layer, ARGS, DEVICE)
+        losses = test_epoch(test_dl, models, blur_layer, ARGS, DEVICE)
 
-    wandb.log({"test_mse_loss": losses[0], 
-        "test_bce_loss": losses[2], 
-        "test_dice_loss": losses[4]}, step=0)
+        wandb.log({"test_mse_loss": losses[0], 
+            "test_bce_loss": losses[2], 
+            "test_dice_loss": losses[4]}, step=ep)
 
-    wandb.finish()    
+        wandb.finish()    
 
 
 def consecutively(ARGS): 
@@ -235,7 +251,7 @@ def consecutively(ARGS):
     # Log in to your W&B account
     wandb.login()
     wandb.init(project=f"{ARGS.training_setup}_{ARGS.segmentation}",
-               name=f"{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
+               name=f"{ARGS.name}_{ARGS.cnn_setup}_{ARGS.mapping_setup}_{ARGS.first_omega_0}", 
                config=vars(ARGS))
     
     path, DEVICE = initialize_path_and_device(ARGS)   
@@ -254,19 +270,19 @@ def consecutively(ARGS):
     ##### epoch, train loss mean, train loss std, val loss mean, val loss std #####
     mask_losses, pcmra_losses, dice_losses = np.empty((0, 5)), np.empty((0, 5)), np.empty((0, 5))
     
-    for ep in range(ARGS.pcmra_epochs):
+    for ep in range(1):
         t = time.time() 
 
         for model in models.values():
             model.train()
 
-        loss, _ = train_reconstruction(train_dl, models, optims, schedulers, ARGS)
+        # loss, _ = train_reconstruction(train_dl, models, optims, schedulers, ARGS)
         
-        wandb.log({"epoch_sampling_mse_loss": loss, 
-            "epochs": ep}, step=ep)
+        # wandb.log({"epoch_sampling_mse_loss": loss, 
+        #     "epochs": ep}, step=ep)
 
-        if ep % 10 == 0: 
-            print(f"Epoch {ep}, train loss {loss.round(6)}")
+        # if ep % 10 == 0: 
+        #     print(f"Epoch {ep}, train loss {loss.round(6)}")
 
         if ep % ARGS.eval_every == 0: 
             print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
@@ -277,47 +293,73 @@ def consecutively(ARGS):
                 "eval_mse_loss": pcmra_losses[-1, 3], 
                 "epochs": ep}, step=ep)
 
-            # check if training improved last 200 epochs
-            if (pcmra_losses.shape[0] - np.argmin(pcmra_losses[:, 1])) > (200 / ARGS.eval_every):
-                break
-        
-    for ep in range(ARGS.mask_epochs):
-        t = time.time() 
+            print("This was a test epoch for reconstruction.")
 
-        for model in models.values():
-            model.train()
+    
+    again = True
+    while again == True: 
+        again = False
+    
+        for ep in range(ARGS.mask_epochs):
+            t = time.time() 
 
-        loss, _ = train_segmentation(train_dl, models, optims, schedulers, blur_layer, ARGS)
-        
-        wandb.log({"epoch_sampling_bce_loss": loss, 
-            "epochs": ep}, step=ep)
+            for model in models.values():
+                model.train()
 
-        if ep % 10 == 0: 
-            print(f"Epoch {ep}, train loss {loss.round(6)}")
+            loss, _ = train_segmentation(train_dl, models, optims, schedulers, blur_layer, ARGS)
+            
+            if ep == 0: 
+                mask_losses, dice_losses = validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, mask_losses, dice_losses, "mask", ARGS)     
+                
+                if dice_losses[0, 1] < 1: 
 
-        if ep % ARGS.eval_every == 0: 
+                    ##### initialize models and optimizers #####
+                    new_models, new_optims, new_schedulers = initialize_models_and_optims(ARGS, DEVICE)
 
-            print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
+                    models["mapping"] = new_models["mapping"]
+                    models["siren"] = new_models["siren"]
+                    optims["mapping"] = new_optims["mapping"]
+                    optims["siren"] = new_optims["siren"]
+                    schedulers["mapping"] = new_schedulers["mapping"]
+                    schedulers["siren"] = new_schedulers["siren"]
+                    
+                    mask_losses, dice_losses =  np.empty((0, 5)), np.empty((0, 5))
+                    
+                    again = True
 
-            mask_losses, dice_losses = validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, mask_losses, dice_losses, "mask", ARGS)     
+                    break 
 
-            wandb.log({"train_bce_loss": mask_losses[-1, 1], 
-                "eval_bce_loss": mask_losses[-1, 3], 
-                "train_dice_loss": dice_losses[-1, 1], 
-                "eval_dice_loss": dice_losses[-1, 3], 
+            wandb.log({"epoch_sampling_bce_loss": loss, 
                 "epochs": ep}, step=ep)
 
-            # check if training improved last 200 epochs
-            if ARGS.segmentation == "binary" and (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every):
-                break
-            if ARGS.segmentation == "sdf" and (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every):
-                break
+            if ep % 10 == 0: 
+                print(f"Epoch {ep}, train loss {loss.round(6)}")
+
+            if ep % ARGS.eval_every == 0: 
+
+                print(f"Epoch {ep} took {round(time.time() - t, 2)} seconds.")
+
+                mask_losses, dice_losses = validation_epoch(ep, train_dl, val_dl, models, optims, blur_layer, mask_losses, dice_losses, "mask", ARGS)     
+
+                wandb.log({"train_bce_loss": mask_losses[-1, 1], 
+                    "eval_bce_loss": mask_losses[-1, 3], 
+                    "train_dice_loss": dice_losses[-1, 1], 
+                    "eval_dice_loss": dice_losses[-1, 3], 
+                    "epochs": ep}, step=ep)
+
+                # check if training improved last 200 epochs
+                if ARGS.segmentation == "binary" and (mask_losses.shape[0] - np.argmin(mask_losses[:, 1])) > (200 / ARGS.eval_every)  and \
+                optims["siren"].param_groups[0]['lr'] == ARGS.min_lr:
+                    break
+                if ARGS.segmentation == "sdf" and (dice_losses.shape[0] - np.argmin(dice_losses[:, 1])) > (200 / ARGS.eval_every) and \
+                optims["siren"].param_groups[0]['lr'] == ARGS.min_lr:
+                    break
 
     losses = test_epoch(test_dl, models, blur_layer, ARGS, DEVICE)
 
     wandb.log({"test_mse_loss": losses[0], 
         "test_bce_loss": losses[2], 
-        "test_dice_loss": losses[4]}, step=0)
+        "test_dice_loss": losses[4]}, step=ep)
 
     wandb.finish()    
 
@@ -438,14 +480,14 @@ def train_combined(dataloader, models, optims, schedulers, blur_layer, ARGS):
         s_out, coords_backprop = models["siren"](coords_array, s_gamma, s_beta)            
         
         # Backward pass
-        r_loss = mse_criterion(out, pcmra_array)  
+        r_loss = mse_criterion(r_out, pcmra_array)  
         
         if ARGS.segmentation.lower() == "binary": 
-            s_loss = bce_criterion(out, mask_array)  
+            s_loss = bce_criterion(s_out, mask_array)  
         elif ARGS.segmentation.lower() == "sdf": 
-            s_loss = sdf_criterion(coords_backprop, out, surface_array, norm_array, ARGS)
+            s_loss = sdf_criterion(coords_backprop, s_out, surface_array, norm_array, ARGS)
             
-        loss = r_loss + s_loss
+        loss = r_loss + ARGS.seg_loss_lambda * s_loss
         loss.backward()
 
         losses.append(loss.item())
@@ -548,7 +590,7 @@ def val_model(dataloader, models, criterion, blur_layer, ARGS, output="pcmra"):
             
             out = get_complete_image(models, pcmra, coords_array, ARGS, output=output)
             
-            if ARGS.segmentation.lower() == "sdf": 
+            if ARGS.segmentation.lower() == "sdf" and output=="mask": 
                 out = 1 - F.sigmoid(out)
                 
             for s_out, s_labels in zip(out, labels):
